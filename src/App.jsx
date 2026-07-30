@@ -89,6 +89,27 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
+  // Admin Authentication State
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [passcodeAttempt, setPasscodeAttempt] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const adminPasscode = import.meta.env.VITE_ADMIN_PASSCODE || 'admin123';
+
+  const handleAdminLoginSubmit = (e) => {
+    e.preventDefault();
+    if (passcodeAttempt === adminPasscode) {
+      setIsAdminAuthenticated(true);
+      setShowLoginModal(false);
+      setPasscodeAttempt('');
+      setLoginError('');
+      setActiveTab('admin');
+    } else {
+      setLoginError('Mật khẩu không chính xác. Vui lòng thử lại!');
+    }
+  };
+
   // 1. Fetch data from Supabase if configured, otherwise fall back to localStorage
   useEffect(() => {
     async function fetchSupabaseData() {
@@ -413,7 +434,16 @@ function App() {
             <li>
               <button 
                 className="btn-admin"
-                onClick={() => { setActiveTab('admin'); setAlert(null); }}
+                onClick={() => {
+                  setAlert(null);
+                  if (isAdminAuthenticated) {
+                    setActiveTab('admin');
+                  } else {
+                    setShowLoginModal(true);
+                    setPasscodeAttempt('');
+                    setLoginError('');
+                  }
+                }}
               >
                 ⚙️ Admin Panel
               </button>
@@ -709,7 +739,7 @@ function App() {
                     <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Hệ thống quản lý đặt chỗ và cấu hình sản phẩm</p>
                   </div>
                 </div>
-                <button className="btn-exit" onClick={() => setActiveTab('home')}>
+                <button className="btn-exit" onClick={() => { setIsAdminAuthenticated(false); setActiveTab('home'); }}>
                   Thoát Admin
                 </button>
               </div>
@@ -908,6 +938,42 @@ function App() {
           </p>
         </div>
       </footer>
+
+      {/* Admin Login Modal */}
+      {showLoginModal && (
+        <div className="login-modal-overlay">
+          <div className="login-modal-content glassmorphism">
+            <span className="login-icon-large">🔐</span>
+            <h3 className="login-title-text">Xác thực Admin</h3>
+            <p className="login-subtitle-text">Vui lòng nhập mật khẩu quản trị viên để truy cập trang quản trị đơn hàng.</p>
+            <form onSubmit={handleAdminLoginSubmit}>
+              <div className="login-form-group">
+                <input 
+                  type="password" 
+                  placeholder="Mật khẩu Admin" 
+                  value={passcodeAttempt}
+                  onChange={(e) => setPasscodeAttempt(e.target.value)}
+                  autoFocus
+                  required
+                />
+                {loginError && <span className="login-error-text">{loginError}</span>}
+              </div>
+              <div className="login-modal-actions">
+                <button type="submit" className="btn-login-confirm">
+                  Đăng nhập
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-login-cancel"
+                  onClick={() => setShowLoginModal(false)}
+                >
+                  Hủy bỏ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
