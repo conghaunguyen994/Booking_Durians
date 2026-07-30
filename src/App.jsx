@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import durianHero from './assets/durian_ri6.png';
+import { supabase, isConfigured } from './supabaseClient';
 import './App.css';
 
 // Mock initial bookings data if localStorage is empty
@@ -88,18 +89,61 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Persistence Effects
+  // 1. Fetch data from Supabase if configured, otherwise fall back to localStorage
   useEffect(() => {
-    localStorage.setItem('durian_bookings', JSON.stringify(bookings));
+    async function fetchSupabaseData() {
+      if (isConfigured) {
+        try {
+          // Fetch settings (price and weight)
+          const { data: settingsData, error: settingsError } = await supabase
+            .from('settings')
+            .select('*');
+          
+          if (!settingsError && settingsData) {
+            const priceSetting = settingsData.find(s => s.key === 'price_per_kg');
+            const weightSetting = settingsData.find(s => s.key === 'avg_weight_per_fruit');
+            if (priceSetting) setPricePerKg(parseInt(priceSetting.value, 10));
+            if (weightSetting) setAvgWeightPerFruit(parseFloat(weightSetting.value));
+          }
+
+          // Fetch bookings
+          const { data: bookingsData, error: bookingsError } = await supabase
+            .from('bookings')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!bookingsError && bookingsData) {
+            setBookings(bookingsData.map(b => ({
+              id: b.id,
+              name: b.name,
+              phone: b.phone,
+              quantity: parseFloat(b.quantity),
+              unit: b.unit,
+              deliveryDate: b.delivery_date,
+              deliveryTime: b.delivery_time,
+              address: b.address,
+              note: b.note,
+              status: b.status,
+              totalPrice: parseFloat(b.total_price),
+              createdAt: b.created_at
+            })));
+          } else if (bookingsError) {
+            console.error('Error fetching bookings from Supabase:', bookingsError);
+          }
+        } catch (err) {
+          console.error('Failed to communicate with Supabase:', err);
+        }
+      }
+    }
+    fetchSupabaseData();
+  }, []);
+
+  // 2. Sync local updates to localStorage ONLY when Supabase is offline
+  useEffect(() => {
+    if (!isConfigured) {
+      localStorage.setItem('durian_bookings', JSON.stringify(bookings));
+    }
   }, [bookings]);
-
-  useEffect(() => {
-    localStorage.setItem('durian_price_per_kg', pricePerKg.toString());
-  }, [pricePerKg]);
-
-  useEffect(() => {
-    localStorage.setItem('durian_avg_weight_per_fruit', avgWeightPerFruit.toString());
-  }, [avgWeightPerFruit]);
 
   // Helper function to format currency
   const formatCurrency = (val) => {
@@ -126,7 +170,7 @@ function App() {
   };
 
   // Handle Booking Form Submit
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     
     // Simple validation
@@ -162,6 +206,34 @@ function App() {
       createdAt: new Date().toISOString()
     };
 
+    // Save to DB or LocalStorage
+    if (isConfigured) {
+      try {
+        const { error } = await supabase.from('bookings').insert([{
+          id: newBooking.id,
+          name: newBooking.name,
+          phone: newBooking.phone,
+          quantity: newBooking.quantity,
+          unit: newBooking.unit,
+          delivery_date: newBooking.deliveryDate,
+          delivery_time: newBooking.deliveryTime,
+          address: newBooking.address,
+          note: newBooking.note,
+          status: newBooking.status,
+          total_price: newBooking.totalPrice,
+          created_at: newBooking.createdAt
+        }]);
+        
+        if (error) {
+          setAlert({ type: 'error', message: 'Lỗi đồng bộ dữ liệu lên Supabase: ' + error.message });
+          return;
+        }
+      } catch (err) {
+        setAlert({ type: 'error', message: 'Không thể kết nối với Supabase. Vui lòng kiểm tra mạng.' });
+        return;
+      }
+    }
+
     setBookings(prev => [newBooking, ...prev]);
     setAlert({ type: 'success', message: `Đặt hàng thành công! Mã đặt chỗ của bạn là: ${newBooking.id}. Admin sẽ liên hệ lại xác nhận sớm nhất.` });
     
@@ -182,7 +254,24 @@ function App() {
   };
 
   // Admin Actions
-  const updateBookingStatus = (id, newStatus) => {
+  const updateBookingStatus = async (id, newStatus) => {
+    if (isConfigured) {
+      try {
+        const { error } = await supabase
+          .from('bookings')
+          .update({ status: newStatus })
+          .eq('id', id);
+        
+        if (error) {
+          alert('Lỗi cập nhật trạng thái trên Supabase: ' + error.message);
+          return;
+        }
+      } catch (err) {
+        alert('Lỗi kết nối Supabase. Không thể cập nhật.');
+        return;
+      }
+    }
+
     setBookings(prev => prev.map(booking => {
       if (booking.id === id) {
         return { ...booking, status: newStatus };
@@ -191,15 +280,53 @@ function App() {
     }));
   };
 
-  const deleteBooking = (id) => {
+  const deleteBooking = async (id) => {
     if (window.confirm(`Bạn có chắc chắn muốn xóa đơn hàng ${id}?`)) {
+      if (isConfigured) {
+        try {
+          const { error } = await supabase
+            .from('bookings')
+            .delete()
+            .eq('id', id);
+          
+          if (error) {
+            alert('Lỗi xóa đơn hàng trên Supabase: ' + error.message);
+            return;
+          }
+        } catch (err) {
+          alert('Lỗi kết nối Supabase. Không thể xóa.');
+          return;
+        }
+      }
+
       setBookings(prev => prev.filter(booking => booking.id !== id));
     }
   };
 
+  // Admin Config Updates
+  const handlePriceChange = async (newVal) => {
+    const val = Math.max(0, parseInt(newVal, 10) || 0);
+    setPricePerKg(val);
+    
+    if (isConfigured) {
+      await supabase.from('settings').upsert({ key: 'price_per_kg', value: val.toString() });
+    } else {
+      localStorage.setItem('durian_price_per_kg', val.toString());
+    }
+  };
+
+  const handleWeightChange = async (newVal) => {
+    const val = Math.max(0.1, parseFloat(newVal) || 3);
+    setAvgWeightPerFruit(val);
+    
+    if (isConfigured) {
+      await supabase.from('settings').upsert({ key: 'avg_weight_per_fruit', value: val.toString() });
+    } else {
+      localStorage.setItem('durian_avg_weight_per_fruit', val.toString());
+    }
+  };
+
   // Admin Dashboard Calculations
-  const activeBookings = bookings.filter(b => b.status !== 'cancelled');
-  
   const totalOrders = bookings.length;
   
   const totalWeightKg = bookings.reduce((sum, b) => {
@@ -240,11 +367,24 @@ function App() {
     <div className="app">
       {/* Header / Navbar */}
       <header className="header glassmorphism">
-        <nav className="navbar">
-          <a href="#home" className="logo" onClick={() => setActiveTab('home')}>
-            <span className="logo-icon">🥑</span>
-            <span>Ri6<span className="logo-highlight">Durian</span></span>
-          </a>
+        <nav className="navbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <a href="#home" className="logo" onClick={() => setActiveTab('home')}>
+              <span className="logo-icon">🥑</span>
+              <span>Ri6<span className="logo-highlight">Durian</span></span>
+            </a>
+            <div>
+              {isConfigured ? (
+                <span className="badge badge-delivered" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                  ☁️ Live: Supabase
+                </span>
+              ) : (
+                <span className="badge badge-pending" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                  💾 LocalStorage
+                </span>
+              )}
+            </div>
+          </div>
           <ul className="nav-links">
             <li>
               <button 
@@ -583,7 +723,7 @@ function App() {
                     <input 
                       type="number" 
                       value={pricePerKg} 
-                      onChange={(e) => setPricePerKg(Math.max(0, parseInt(e.target.value, 10) || 0))} 
+                      onChange={(e) => handlePriceChange(e.target.value)} 
                     />
                   </div>
                   <div>
@@ -592,7 +732,7 @@ function App() {
                       type="number" 
                       step="0.1"
                       value={avgWeightPerFruit} 
-                      onChange={(e) => setAvgWeightPerFruit(Math.max(0.1, parseFloat(e.target.value) || 3))} 
+                      onChange={(e) => handleWeightChange(e.target.value)} 
                     />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-end' }}>
