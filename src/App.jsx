@@ -105,6 +105,9 @@ function App() {
       setPasscodeAttempt('');
       setLoginError('');
       setActiveTab('admin');
+      if (window.location.pathname !== '/admin' && window.location.hash !== '#admin') {
+        window.history.pushState(null, '', '/admin');
+      }
     } else {
       setLoginError('Mật khẩu không chính xác. Vui lòng thử lại!');
     }
@@ -158,6 +161,43 @@ function App() {
     }
     fetchSupabaseData();
   }, []);
+
+  // 1b. Listen to URL path or hash change to toggle Admin auth modal
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+
+      if (path === '/admin' || hash === '#admin') {
+        if (!isAdminAuthenticated) {
+          setShowLoginModal(true);
+          setPasscodeAttempt('');
+          setLoginError('');
+        } else {
+          setActiveTab('admin');
+        }
+      } else {
+        setShowLoginModal(false);
+        if (hash === '#info') {
+          setActiveTab('info');
+        } else if (hash === '#booking') {
+          setActiveTab('booking');
+        } else {
+          setActiveTab('home');
+        }
+      }
+    };
+
+    handleUrlChange();
+
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, [isAdminAuthenticated]);
 
   // 2. Sync local updates to localStorage ONLY when Supabase is offline
   useEffect(() => {
@@ -410,7 +450,11 @@ function App() {
             <li>
               <button 
                 className={`nav-link ${activeTab === 'home' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('home'); setAlert(null); }}
+                onClick={() => { 
+                  setActiveTab('home'); 
+                  setAlert(null); 
+                  window.history.pushState(null, '', '/');
+                }}
               >
                 Trang chủ
               </button>
@@ -418,7 +462,11 @@ function App() {
             <li>
               <button 
                 className={`nav-link ${activeTab === 'info' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('info'); setAlert(null); }}
+                onClick={() => { 
+                  setActiveTab('info'); 
+                  setAlert(null); 
+                  window.history.pushState(null, '', '/#info');
+                }}
               >
                 Đặc sản Ri6
               </button>
@@ -426,28 +474,16 @@ function App() {
             <li>
               <button 
                 className={`nav-link ${activeTab === 'booking' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('booking'); setAlert(null); }}
+                onClick={() => { 
+                  setActiveTab('booking'); 
+                  setAlert(null); 
+                  window.history.pushState(null, '', '/#booking');
+                }}
               >
                 Đặt hàng ngay
               </button>
             </li>
-            <li>
-              <button 
-                className="btn-admin"
-                onClick={() => {
-                  setAlert(null);
-                  if (isAdminAuthenticated) {
-                    setActiveTab('admin');
-                  } else {
-                    setShowLoginModal(true);
-                    setPasscodeAttempt('');
-                    setLoginError('');
-                  }
-                }}
-              >
-                ⚙️ Admin Panel
-              </button>
-            </li>
+
           </ul>
         </nav>
       </header>
@@ -739,7 +775,11 @@ function App() {
                     <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Hệ thống quản lý đặt chỗ và cấu hình sản phẩm</p>
                   </div>
                 </div>
-                <button className="btn-exit" onClick={() => { setIsAdminAuthenticated(false); setActiveTab('home'); }}>
+                <button className="btn-exit" onClick={() => {
+                  setIsAdminAuthenticated(false);
+                  setActiveTab('home');
+                  window.history.pushState(null, '', '/');
+                }}>
                   Thoát Admin
                 </button>
               </div>
