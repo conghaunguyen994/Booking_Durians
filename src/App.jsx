@@ -434,17 +434,6 @@ function App() {
               <span className="logo-icon">🥑</span>
               <span>Ri6<span className="logo-highlight">Durian</span></span>
             </a>
-            <div>
-              {isConfigured ? (
-                <span className="badge badge-delivered" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-                  ☁️ Live: Supabase
-                </span>
-              ) : (
-                <span className="badge badge-pending" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-                  💾 LocalStorage
-                </span>
-              )}
-            </div>
           </div>
           <ul className="nav-links">
             <li>
